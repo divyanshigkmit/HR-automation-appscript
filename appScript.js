@@ -1,9 +1,11 @@
 const https = require("https");
 var emoji = require("node-emoji");
 require("dotenv").config();
+const fs = require("fs");
+const path = require("path");
 
 const client = require("./config/db");
-
+const mailer = require("./mail");
 
 /**
  * Handles the actual sending request.
@@ -73,6 +75,20 @@ const pushInArrayAndReturnString = (rows, names, emails) => {
   return havingEventString;
 };
 
+const sendMail = async (names, emails, mailSubject, htmlFile) => {
+  for (let i = 0; i < names.length; i++) {
+    let subject = `${names[i].split(" ")[0]}, ${mailSubject}`;
+    let email = emails[i];
+    let template = fs.readFileSync(
+      path.resolve(`./templates/${htmlFile}`),
+      "utf8"
+    );
+    template = template.replace("{{userName}}", names[i].split(" ")[0]);
+
+    await mailer.sendMail(email, subject, template);
+  }
+};
+
 const birthdayJob = async () => {
   try {
     let birthdayNames = [],
@@ -112,6 +128,13 @@ const birthdayJob = async () => {
       ],
     };
     sendSlackMessage(process.env.WEBHOOK_URL, birthdayNotification);
+    //   Send mail
+    await sendMail(
+      birthdayNames,
+      birthdayEmails,
+      "Wish you a very Happy Birthday!",
+      "birthday.html"
+    );
   } catch (error) {
     console.log("Message: ", error.message);
   }
