@@ -140,6 +140,58 @@ const birthdayJob = async () => {
   }
 };
 
+const workAnniverasryJob = async () => {
+  try {
+    let workAnniversaryNames = [],
+      workAnniversaryEmails = [];
+
+    // Check for birthday
+    const havingWorkAnniversary =
+      await client.query(`select * from anniversaries_and_birthdays 
+  WHERE DATE_PART('day', date_of_joining) = date_part('day', CURRENT_DATE)
+  AND
+  DATE_PART('month', date_of_joining) = date_part('month', CURRENT_DATE);`);
+
+    if (!havingWorkAnniversary.rowCount)
+      throw new Error("No work anniversary today!"); //If not exist
+
+    const imageUrl =
+      await client.query(`select work_anniversary_url from day_image_mapping 
+  WHERE day = date_part('day', CURRENT_DATE)
+  AND
+  month = date_part('month', CURRENT_DATE) LIMIT 1;`);
+
+    const havingWorkAnniversaryString = pushInArrayAndReturnString(
+      havingWorkAnniversary.rows,
+      workAnniversaryNames,
+      workAnniversaryEmails
+    );
+
+    // Marriage anniversary message
+    const marriageAnniversaryNotification = {
+      text: `<!channel> - Wishing you all the love and happiness on your anniversary. Enjoy looking back on all of your special memories together.\nHappy Wedding Anniversary, ${havingWorkAnniversaryString}! ${emoji.emojify(
+        ":confetti_ball::tada::gift::dancer::gift_heart:"
+      )}`,
+      attachments: [
+        {
+          image_url: imageUrl.rows[0].work_anniversary_url,
+          text: `${havingWorkAnniversaryString}'s Work Anniversary`,
+        },
+      ],
+    };
+    sendSlackMessage(process.env.WEBHOOK_URL, marriageAnniversaryNotification);
+    // Send mail
+    await sendMail(
+      workAnniversaryNames,
+      workAnniversaryEmails,
+      "Wish you a very Happy Work Anniversary!",
+      "birthday.html"
+    );
+  } catch (error) {
+    console.log("Message: ", error.message);
+  }
+};
+
 // main
 (async function () {
   if (!process.env.WEBHOOK_URL) {
@@ -148,4 +200,5 @@ const birthdayJob = async () => {
 
   console.log("Sending slack message");
   await birthdayJob();
+  await workAnniverasryJob();
 })();
