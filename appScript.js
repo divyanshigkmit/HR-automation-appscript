@@ -192,6 +192,57 @@ const workAnniverasryJob = async () => {
   }
 };
 
+const marriageAnniverasryJob = async () => {
+  try {
+    let marriageAnniversaryNames = [],
+      marriageAnniversaryEmails = [];
+
+    // Check for birthday
+    const havingMarriageAnniversary =
+      await client.query(`select * from anniversaries_and_birthdays 
+  WHERE DATE_PART('day', wedding_anniversary) = date_part('day', CURRENT_DATE)
+  AND
+  DATE_PART('month', wedding_anniversary) = date_part('month', CURRENT_DATE);`);
+    if (!havingMarriageAnniversary.rowCount)
+      throw new Error("No marriage anniversary today!"); //If not exist
+
+    const imageUrl =
+      await client.query(`select marriage_anniversary_url from day_image_mapping 
+  WHERE day = date_part('day', CURRENT_DATE)
+  AND
+  month = date_part('month', CURRENT_DATE) LIMIT 1;`);
+
+    const havingMarriageAnniversaryString = pushInArrayAndReturnString(
+      havingMarriageAnniversary.rows,
+      marriageAnniversaryNames,
+      marriageAnniversaryEmails
+    );
+
+    // Marriage anniversary message
+    const marriageAnniversaryNotification = {
+      text: `<!channel> - Wishing you all the love and happiness on your anniversary. Enjoy looking back on all of your special memories together.\nHappy Wedding Anniversary, ${havingMarriageAnniversaryString}! ${emoji.emojify(
+        ":confetti_ball::tada::gift::dancer::gift_heart:"
+      )}`,
+      attachments: [
+        {
+          image_url: imageUrl.rows[0].marriage_anniversary_url,
+          text: `${havingMarriageAnniversaryString}'s Marriage Anniversary`,
+        },
+      ],
+    };
+    sendSlackMessage(process.env.WEBHOOK_URL, marriageAnniversaryNotification);
+    // Send mail
+    await sendMail(
+      marriageAnniversaryNames,
+      marriageAnniversaryEmails,
+      "Wish you a very Happy Marriage Anniversary!",
+      "birthday.html"
+    );
+  } catch (error) {
+    console.log("Message: ", error.message);
+  }
+};
+
 // main
 (async function () {
   if (!process.env.WEBHOOK_URL) {
@@ -201,4 +252,5 @@ const workAnniverasryJob = async () => {
   console.log("Sending slack message");
   await birthdayJob();
   await workAnniverasryJob();
+  await marriageAnniverasryJob();
 })();
