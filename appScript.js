@@ -3,6 +3,7 @@ var emoji = require("node-emoji");
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
+const cron = require("node-cron");
 
 const client = require("./config/db");
 const mailer = require("./mail");
@@ -244,13 +245,19 @@ const marriageAnniverasryJob = async () => {
 };
 
 // main
-(async function () {
-  if (!process.env.WEBHOOK_URL) {
-    console.error("Please fill in your Webhook URL");
-  }
+cron.schedule("0 10 * * *", () => {
+  (async function () {
+    if (!process.env.WEBHOOK_URL) {
+      console.error("Please fill in your Webhook URL");
+    }
 
-  console.log("Sending slack message");
-  await birthdayJob();
-  await workAnniverasryJob();
-  await marriageAnniverasryJob();
-})();
+    console.log("Sending slack message");
+    try {
+      await birthdayJob();
+      await workAnniverasryJob();
+      await marriageAnniverasryJob();
+    } catch (error) {
+      console.error("There was a error with the request", error);
+    }
+  })();
+});
