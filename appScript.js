@@ -1,12 +1,17 @@
 const https = require("https");
-var emoji = require("node-emoji");
+const emoji = require("node-emoji");
 require("dotenv").config();
-const fs = require("fs");
-const path = require("path");
 const cron = require("node-cron");
+const ejs = require("ejs");
+const path = require("path");
 
 const client = require("./config/db");
 const mailer = require("./mail");
+const {
+  generateBirthdayContent,
+  generateWorkAnniversaryContent,
+  generateMarriageAnniversaryContents,
+} = require("./content");
 
 /**
  * Handles the actual sending request.
@@ -58,97 +63,128 @@ https: function sendSlackMessage(webhookURL, messageBody) {
   });
 }
 
+function renderFileAsync(templatePath, data) {
+  return new Promise((resolve) => {
+    ejs.renderFile(templatePath, data, (err, templateData) => {
+      resolve(templateData);
+    });
+  });
+}
+
 // return in string - people having any event
-const pushInArrayAndReturnString = (rows, names, emails) => {
-  if (rows.length == 1) {
-    names.push(rows[0].name);
-    emails.push(rows[0].email);
-    return rows[0].name.split(" ")[0];
-  }
-  let havingEventString = "";
+const pushInArrayAndReturnString = (rows, emails) => {
+  let stringForSlack = ``;
+  let stringForMail = ``;
+  let imageUrlBase;
   for (let i = 0; i < rows.length; i++) {
-    names.push(rows[i].name);
     emails.push(rows[i].email);
-    havingEventString += rows[i].name.split(" ")[0];
-    if (!(i >= rows.length - 2)) havingEventString += ", ";
-    else if (i == rows.length - 2) havingEventString += " and ";
+    stringForSlack += `<@${rows[i].member_id}>,`;
+    stringForMail += `${rows[i].name.split(" ")[0]},`;
   }
-  return havingEventString;
+  stringForSlack = stringForSlack.slice(0, -1);
+  stringForMail = stringForMail.slice(0, -1);
+
+  imageUrlBase = stringForMail.split(",");
+  imageUrlBase = imageUrlBase.sort().join("_");
+  imageUrlBase = imageUrlBase.toLowerCase();
+
+  stringForSlack = stringForSlack.replace(/,(?=[^,]+$)/, ", and ");
+  stringForMail = stringForMail.replace(/,(?=[^,]+$)/, ", and ");
+
+  return {
+    stringForSlack,
+    stringForMail,
+    imageUrlBase,
+  };
 };
 
-const sendMail = async (names, emails, mailSubject, htmlFile) => {
-  for (let i = 0; i < names.length; i++) {
-    let subject = `${names[i].split(" ")[0]}, ${mailSubject}`;
-    let email = emails[i];
-    let template = fs.readFileSync(
-      path.resolve(`./templates/${htmlFile}`),
-      "utf8"
-    );
-    template = template.replace("{{userName}}", names[i].split(" ")[0]);
-
-    await mailer.sendMail(email, subject, template);
+const generateCc = async (emails) => {
+  const allEmail = await client.query(`select email from employee`);
+  let ccEmails = [];
+  for (let i = 0; i < allEmail.rowCount; i++) {
+    if (!emails.includes(allEmail.rows[i].email))
+      ccEmails.push(allEmail.rows[i].email);
   }
+  return ccEmails;
 };
 
-const birthdayJob = async () => {
+const sendMail = async (employeeName, to, subject, tempateName, imageUrl) => {
+  const templatePath = path.resolve(`./templates/${tempateName}.ejs`);
+  const html = await renderFileAsync(templatePath, {
+    employeeName,
+    imageUrl,
+  });
+  const cc = await generateCc(to);
+  await mailer.sendMail({
+    to,
+    subject,
+    html,
+    cc: cc,
+  });
+};
+
+const birthdayJob = async (day, month) => {
   try {
-    let birthdayNames = [],
-      birthdayEmails = [];
+    let birthdayEmails = [];
 
     // Check for birthday
     const havingBirthday =
-      await client.query(`select * from anniversaries_and_birthdays 
+      await client.query(`select member_id, email, name from employee 
   WHERE DATE_PART('day', date_of_birth) = date_part('day', CURRENT_DATE)
   AND
   DATE_PART('month', date_of_birth) = date_part('month', CURRENT_DATE);`);
 
     if (!havingBirthday.rowCount) throw new Error("No birthday today!"); //If not exist
 
-    const imageUrl =
-      await client.query(`select birthday_url from day_image_mapping 
-  WHERE day = date_part('day', CURRENT_DATE)
-  AND
-  month = date_part('month', CURRENT_DATE) LIMIT 1;`);
-
     const havingBirthdayString = pushInArrayAndReturnString(
       havingBirthday.rows,
-      birthdayNames,
       birthdayEmails
     );
+    console.log(havingBirthdayString);
+
+    const birthdayContent = generateBirthdayContent(
+      havingBirthdayString.stringForSlack
+    );
+    const imageUrl = `${process.env.S3_URL}${
+      havingBirthdayString.imageUrlBase + "_birthday.png"
+    }`;
 
     // Birthday message
     const birthdayNotification = {
-      text: `<!channel> - Wishing you a beautiful day with good health and happiness forever.\nHappy birthday, ${havingBirthdayString}! ${emoji.emojify(
+      text: `<!channel> - ${birthdayContent} ${emoji.emojify(
         ":confetti_ball::tada::gift::birthday::clap:"
       )}`,
       attachments: [
         {
-          image_url: imageUrl.rows[0].birthday_url,
-          text: `${havingBirthdayString}'s Birthday`,
+          image_url: imageUrl,
+          text: `${havingBirthdayString.imageUrlBase}_birthday`,
+          short: true,
         },
       ],
     };
+    console.log(birthdayNotification);
+
     sendSlackMessage(process.env.WEBHOOK_URL, birthdayNotification);
-    //   Send mail
+
     await sendMail(
-      birthdayNames,
+      havingBirthdayString.stringForMail,
       birthdayEmails,
-      "Wish you a very Happy Birthday!",
-      "birthday.html"
+      "Happy Birthday",
+      "employeeBirthday",
+      imageUrl
     );
   } catch (error) {
     console.log("Message: ", error.message);
   }
 };
 
-const workAnniverasryJob = async () => {
+const workAnniverasryJob = async (day, month) => {
   try {
-    let workAnniversaryNames = [],
-      workAnniversaryEmails = [];
+    let workAnniversaryEmails = [];
 
     // Check for birthday
     const havingWorkAnniversary =
-      await client.query(`select * from anniversaries_and_birthdays 
+      await client.query(`select member_id, email, name from employee 
   WHERE DATE_PART('day', date_of_joining) = date_part('day', CURRENT_DATE)
   AND
   DATE_PART('month', date_of_joining) = date_part('month', CURRENT_DATE);`);
@@ -156,108 +192,151 @@ const workAnniverasryJob = async () => {
     if (!havingWorkAnniversary.rowCount)
       throw new Error("No work anniversary today!"); //If not exist
 
-    const imageUrl =
-      await client.query(`select work_anniversary_url from day_image_mapping 
-  WHERE day = date_part('day', CURRENT_DATE)
-  AND
-  month = date_part('month', CURRENT_DATE) LIMIT 1;`);
-
     const havingWorkAnniversaryString = pushInArrayAndReturnString(
       havingWorkAnniversary.rows,
-      workAnniversaryNames,
       workAnniversaryEmails
     );
 
+    const workAnniverasryContent = generateWorkAnniversaryContent(
+      havingWorkAnniversaryString.stringForSlack
+    );
+    const imageUrl = `${process.env.S3_URL}${
+      havingWorkAnniversaryString.imageUrlBase + "_work.png"
+    }`;
+
     // Marriage anniversary message
     const marriageAnniversaryNotification = {
-      text: `<!channel> - Wishing you all the love and happiness on your anniversary. Enjoy looking back on all of your special memories together.\nHappy Wedding Anniversary, ${havingWorkAnniversaryString}! ${emoji.emojify(
+      text: `<!channel> - ${workAnniverasryContent} ${emoji.emojify(
         ":confetti_ball::tada::gift::dancer::gift_heart:"
       )}`,
       attachments: [
         {
-          image_url: imageUrl.rows[0].work_anniversary_url,
-          text: `${havingWorkAnniversaryString}'s Work Anniversary`,
+          image_url: imageUrl,
+          text: `${havingWorkAnniversaryString.imageUrlBase}_work_anniversary`,
         },
       ],
     };
+    console.log(marriageAnniversaryNotification);
     sendSlackMessage(process.env.WEBHOOK_URL, marriageAnniversaryNotification);
-    // Send mail
+
     await sendMail(
-      workAnniversaryNames,
+      havingWorkAnniversaryString.stringForMail,
       workAnniversaryEmails,
-      "Wish you a very Happy Work Anniversary!",
-      "birthday.html"
+      "Happy Work Anniversary",
+      "workAnniversary",
+      imageUrl
     );
   } catch (error) {
     console.log("Message: ", error.message);
   }
 };
 
-const marriageAnniverasryJob = async () => {
+const marriageAnniverasryJob = async (day, month) => {
   try {
-    let marriageAnniversaryNames = [],
-      marriageAnniversaryEmails = [];
+    let marriageAnniversaryEmails = [];
 
     // Check for birthday
     const havingMarriageAnniversary =
-      await client.query(`select * from anniversaries_and_birthdays 
-  WHERE DATE_PART('day', wedding_anniversary) = date_part('day', CURRENT_DATE)
+      await client.query(`select member_id, email, name from employee  
+  WHERE DATE_PART('day', marriage_anniversary) = date_part('day', CURRENT_DATE)
   AND
-  DATE_PART('month', wedding_anniversary) = date_part('month', CURRENT_DATE);`);
+  DATE_PART('month', marriage_anniversary) = date_part('month', CURRENT_DATE);`);
     if (!havingMarriageAnniversary.rowCount)
       throw new Error("No marriage anniversary today!"); //If not exist
 
-    const imageUrl =
-      await client.query(`select marriage_anniversary_url from day_image_mapping 
-  WHERE day = date_part('day', CURRENT_DATE)
-  AND
-  month = date_part('month', CURRENT_DATE) LIMIT 1;`);
-
     const havingMarriageAnniversaryString = pushInArrayAndReturnString(
       havingMarriageAnniversary.rows,
-      marriageAnniversaryNames,
       marriageAnniversaryEmails
     );
 
+    const marriageAnniversaryContent = generateMarriageAnniversaryContents(
+      havingMarriageAnniversaryString.stringForSlack
+    );
+    const imageUrl = `${process.env.S3_URL}${
+      havingMarriageAnniversaryString.imageUrlBase + "_marriage.png"
+    }`;
+
     // Marriage anniversary message
     const marriageAnniversaryNotification = {
-      text: `<!channel> - Wishing you all the love and happiness on your anniversary. Enjoy looking back on all of your special memories together.\nHappy Wedding Anniversary, ${havingMarriageAnniversaryString}! ${emoji.emojify(
+      text: `<!channel> - ${marriageAnniversaryContent} ${emoji.emojify(
         ":confetti_ball::tada::gift::dancer::gift_heart:"
       )}`,
       attachments: [
         {
-          image_url: imageUrl.rows[0].marriage_anniversary_url,
-          text: `${havingMarriageAnniversaryString}'s Marriage Anniversary`,
+          image_url: imageUrl,
+          text: `${havingMarriageAnniversaryString.imageUrlBase}_marriage_anniversary`,
         },
       ],
     };
+    console.log(marriageAnniversaryNotification);
     sendSlackMessage(process.env.WEBHOOK_URL, marriageAnniversaryNotification);
-    // Send mail
+
     await sendMail(
-      marriageAnniversaryNames,
+      havingMarriageAnniversaryString.stringForMail,
       marriageAnniversaryEmails,
-      "Wish you a very Happy Marriage Anniversary!",
-      "birthday.html"
+      "Happy Marriage Anniversary",
+      "marriageAnniversary",
+      imageUrl
     );
+  } catch (error) {
+    console.log("Message: ", error.message);
+  }
+};
+
+const employeeFamilyBirthdayJob = async (day, month) => {
+  try {
+    // Check for birthday
+    const havingBirthday =
+      await client.query(`select employee_family.name as name, employee.name as employee_name, employee.email as email from employee_family inner join employee on employee.id = employee_family.employee_id
+  WHERE DATE_PART('day', employee_family.date_of_birth) = date_part('day', CURRENT_DATE)
+  AND
+  DATE_PART('month', employee_family.date_of_birth) = date_part('month', CURRENT_DATE);`);
+
+    if (!havingBirthday.rowCount)
+      throw new Error("No employees' family birthday today!"); //If not exist
+
+    for (const row of havingBirthday.rows) {
+      const imageUrl = `${process.env.S3_URL}${
+        row.name.split(" ")[0].toLowerCase() + "_birthday.png"
+      }`;
+      const templatePath = path.resolve(
+        "./templates/employeeFamilyBirthday.ejs"
+      );
+      const html = await renderFileAsync(templatePath, {
+        employeeName: row.employee_name.split(" ")[0],
+        employeeFamilyName: row.name,
+        imageUrl,
+      });
+      let subject = `${row.name}, Happy Birthday`;
+      await mailer.sendMail({
+        to: row.email,
+        subject,
+        html,
+      });
+    }
   } catch (error) {
     console.log("Message: ", error.message);
   }
 };
 
 // main
-cron.schedule("0 10 * * *", () => {
-  (async function () {
+cron.schedule(process.env.SCRIPT_SCHEDULER_TIME, () => {
+  ((async function () {
     if (!process.env.WEBHOOK_URL) {
       console.error("Please fill in your Webhook URL");
     }
 
     console.log("Sending slack message");
     try {
+      await employeeFamilyBirthdayJob();
       await birthdayJob();
       await workAnniverasryJob();
       await marriageAnniverasryJob();
     } catch (error) {
       console.error("There was a error with the request", error);
     }
-  })();
+  },
+  {
+    timezone: "Asia/Kolkata",
+  })());
 });
