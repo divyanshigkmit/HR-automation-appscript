@@ -1,5 +1,7 @@
 const nodemailer = require("nodemailer");
 
+require("dotenv").config();
+
 var transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -8,21 +10,18 @@ var transporter = nodemailer.createTransport({
   },
 });
 
-async function sendMail(recipient, subject, body) {
+async function sendMail(data) {
+  const { to, cc, subject, html } = data;
   const mailOptions = {
-    from: "divyanshi@gkmit.co",
-    to: recipient,
-    subject: subject,
-    html: body,
+    from: process.env.MAIL_USER,
+    to,
+    subject,
+    html,
+    cc: cc || null,
   };
-
-  transporter.sendMail(mailOptions, function (error, response) {
-    if (error) {
-      console.log(error);
-    } else {
-      console.log(response.envelope);
-    }
-  });
+  const response = await transporter.sendMail(mailOptions);
+  console.log(response.envelope);
+  return;
 }
 
 module.exports = {
