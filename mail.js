@@ -13,7 +13,10 @@ var transporter = nodemailer.createTransport({
 async function sendMail(data) {
   const { to, cc, subject, html } = data;
   const mailOptions = {
-    from: process.env.MAIL_USER,
+    from: {
+      name: "HR GKMIT",
+      address: process.env.MAIL_USER,
+    },
     to,
     subject,
     html,
