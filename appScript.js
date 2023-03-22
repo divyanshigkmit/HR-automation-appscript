@@ -283,7 +283,7 @@ const marriageAnniverasryJob = async (day, month) => {
   }
 };
 
-const employeeFamilyBirthdayJob = async (day, month) => {
+const employeeFamilyBirthdayJob = async () => {
   try {
     // Check for birthday
     const havingBirthday =
@@ -320,23 +320,28 @@ const employeeFamilyBirthdayJob = async (day, month) => {
 };
 
 // main
-cron.schedule(process.env.SCRIPT_SCHEDULER_TIME, () => {
-  ((async function () {
-    if (!process.env.WEBHOOK_URL) {
-      console.error("Please fill in your Webhook URL");
-    }
+const appScript = function () {
+  cron.schedule(
+    process.env.SCRIPT_SCHEDULER_TIME,
+    async () => {
+      if (!process.env.WEBHOOK_URL) {
+        console.error("Please fill in your Webhook URL");
+      }
 
-    console.log("Sending slack message");
-    try {
-      await employeeFamilyBirthdayJob();
-      await birthdayJob();
-      await workAnniverasryJob();
-      await marriageAnniverasryJob();
-    } catch (error) {
-      console.error("There was a error with the request", error);
+      console.log("Sending slack message");
+      try {
+        await employeeFamilyBirthdayJob();
+        await birthdayJob();
+        await workAnniverasryJob();
+        await marriageAnniverasryJob();
+      } catch (error) {
+        console.error("There was a error with the request", error);
+      }
+    },
+    {
+      timezone: "Asia/Kolkata",
     }
-  },
-  {
-    timezone: "Asia/Kolkata",
-  })());
-});
+  );
+};
+
+appScript();
