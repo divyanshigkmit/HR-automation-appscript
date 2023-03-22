@@ -123,7 +123,7 @@ const sendMail = async (employeeName, to, subject, tempateName, imageUrl) => {
   });
 };
 
-const birthdayJob = async () => {
+const birthdayJob = async (day, month) => {
   try {
     let birthdayEmails = [];
 
@@ -178,7 +178,7 @@ const birthdayJob = async () => {
   }
 };
 
-const workAnniverasryJob = async () => {
+const workAnniverasryJob = async (day, month) => {
   try {
     let workAnniversaryEmails = [];
 
@@ -231,7 +231,7 @@ const workAnniverasryJob = async () => {
   }
 };
 
-const marriageAnniverasryJob = async () => {
+const marriageAnniverasryJob = async (day, month) => {
   try {
     let marriageAnniversaryEmails = [];
 
