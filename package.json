@@ -18,12 +18,19 @@
   },
   "homepage": "https://github.com/divyanshigkmit/HR-automation-appscript#readme",
   "dependencies": {
+    "aws-sdk": "^2.1341.0",
+    "compression": "^1.7.4",
+    "cors": "^2.8.5",
     "dotenv": "^16.0.3",
     "ejs": "^3.1.8",
+    "express": "^4.18.2",
+    "googleapis": "^113.0.0",
+    "helmet": "^6.0.1",
     "node-cron": "^3.0.2",
     "node-emoji": "^1.11.0",
     "nodemailer": "^6.9.1",
     "nodemon": "^2.0.20",
-    "pg": "^8.9.0"
+    "pg": "^8.9.0",
+    "sharp": "^0.31.3"
   }
 }
