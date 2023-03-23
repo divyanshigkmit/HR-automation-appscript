@@ -4,14 +4,15 @@ require("dotenv").config();
 const cron = require("node-cron");
 const ejs = require("ejs");
 const path = require("path");
+const { sequelize } = require("../models");
 
-const client = require("./config/db");
-const mailer = require("./mail");
+const models = require("../models");
+const mailer = require("../mail");
 const {
   generateBirthdayContent,
   generateWorkAnniversaryContent,
   generateMarriageAnniversaryContents,
-} = require("./content");
+} = require("../content");
 
 /**
  * Handles the actual sending request.
@@ -72,24 +73,24 @@ function renderFileAsync(templatePath, data) {
 }
 
 // return in string - people having any event
-const pushInArrayAndReturnString = (rows, emails) => {
+const pushInArrayAndReturnString = (employees, emails) => {
   let stringForSlack = ``;
   let stringForMail = ``;
   let imageUrlBase;
-  for (let i = 0; i < rows.length; i++) {
-    emails.push(rows[i].email);
-    stringForSlack += `<@${rows[i].member_id}>,`;
-    stringForMail += `${rows[i].name.split(" ")[0]},`;
+  for (const employee of employees) {
+    emails.push(employee.email);
+    stringForSlack += `<@${employee.member_id}>, `;
+    stringForMail += `${employee.name.split(" ")[0]}, `;
   }
-  stringForSlack = stringForSlack.slice(0, -1);
-  stringForMail = stringForMail.slice(0, -1);
+  stringForSlack = stringForSlack.slice(0, -2);
+  stringForMail = stringForMail.slice(0, -2);
 
-  imageUrlBase = stringForMail.split(",");
+  imageUrlBase = stringForMail.split(", ");
   imageUrlBase = imageUrlBase.sort().join("_");
   imageUrlBase = imageUrlBase.toLowerCase();
 
-  stringForSlack = stringForSlack.replace(/,(?=[^,]+$)/, ", and ");
-  stringForMail = stringForMail.replace(/,(?=[^,]+$)/, ", and ");
+  stringForSlack = stringForSlack.replace(/,(?=[^,]+$)/, " and");
+  stringForMail = stringForMail.replace(/,(?=[^,]+$)/, " and");
 
   return {
     stringForSlack,
@@ -98,23 +99,13 @@ const pushInArrayAndReturnString = (rows, emails) => {
   };
 };
 
-const generateCc = async (emails) => {
-  const allEmail = await client.query(`select email from employee`);
-  let ccEmails = [];
-  for (let i = 0; i < allEmail.rowCount; i++) {
-    if (!emails.includes(allEmail.rows[i].email))
-      ccEmails.push(allEmail.rows[i].email);
-  }
-  return ccEmails;
-};
-
 const sendMail = async (employeeName, to, subject, tempateName, imageUrl) => {
   const templatePath = path.resolve(`./templates/${tempateName}.ejs`);
   const html = await renderFileAsync(templatePath, {
     employeeName,
     imageUrl,
   });
-  const cc = await generateCc(to);
+  const cc = "team@gkmit.co";
   await mailer.sendMail({
     to,
     subject,
@@ -128,19 +119,21 @@ const birthdayJob = async () => {
     let birthdayEmails = [];
 
     // Check for birthday
-    const havingBirthday =
-      await client.query(`select member_id, email, name from employee 
-  WHERE DATE_PART('day', date_of_birth) = date_part('day', CURRENT_DATE)
-  AND
-  DATE_PART('month', date_of_birth) = date_part('month', CURRENT_DATE);`);
+    const havingBirthday = await sequelize.query(
+      `
+  SELECT member_id, email, name
+  FROM employee
+  WHERE DATE_PART('day', date_of_birth) = DATE_PART('day', CURRENT_DATE)
+  AND DATE_PART('month', date_of_birth) = DATE_PART('month', CURRENT_DATE)
+`,
+      { type: sequelize.QueryTypes.SELECT }
+    );
 
-    if (!havingBirthday.rowCount) throw new Error("No birthday today!"); //If not exist
-
+    if (!havingBirthday.length) throw new Error("No birthday today!"); //If not exist
     const havingBirthdayString = pushInArrayAndReturnString(
-      havingBirthday.rows,
+      havingBirthday,
       birthdayEmails
     );
-    console.log(havingBirthdayString);
 
     const birthdayContent = generateBirthdayContent(
       havingBirthdayString.stringForSlack
@@ -174,7 +167,7 @@ const birthdayJob = async () => {
       imageUrl
     );
   } catch (error) {
-    console.log("Message: ", error.message);
+    console.log("birthdayJob error: ", error);
   }
 };
 
@@ -183,17 +176,21 @@ const workAnniverasryJob = async () => {
     let workAnniversaryEmails = [];
 
     // Check for birthday
-    const havingWorkAnniversary =
-      await client.query(`select member_id, email, name from employee 
-  WHERE DATE_PART('day', date_of_joining) = date_part('day', CURRENT_DATE)
-  AND
-  DATE_PART('month', date_of_joining) = date_part('month', CURRENT_DATE);`);
+    const havingWorkAnniversary = await sequelize.query(
+      `
+  SELECT member_id, email, name
+  FROM employee
+  WHERE DATE_PART('day', date_of_joining) = DATE_PART('day', CURRENT_DATE)
+  AND DATE_PART('month', date_of_joining) = DATE_PART('month', CURRENT_DATE)
+`,
+      { type: sequelize.QueryTypes.SELECT }
+    );
 
-    if (!havingWorkAnniversary.rowCount)
+    if (!havingWorkAnniversary.length)
       throw new Error("No work anniversary today!"); //If not exist
 
     const havingWorkAnniversaryString = pushInArrayAndReturnString(
-      havingWorkAnniversary.rows,
+      havingWorkAnniversary,
       workAnniversaryEmails
     );
 
@@ -227,7 +224,7 @@ const workAnniverasryJob = async () => {
       imageUrl
     );
   } catch (error) {
-    console.log("Message: ", error.message);
+    console.log("workAnniverasryJob error: ", error);
   }
 };
 
@@ -236,16 +233,20 @@ const marriageAnniverasryJob = async () => {
     let marriageAnniversaryEmails = [];
 
     // Check for birthday
-    const havingMarriageAnniversary =
-      await client.query(`select member_id, email, name from employee  
-  WHERE DATE_PART('day', marriage_anniversary) = date_part('day', CURRENT_DATE)
-  AND
-  DATE_PART('month', marriage_anniversary) = date_part('month', CURRENT_DATE);`);
-    if (!havingMarriageAnniversary.rowCount)
+    const havingMarriageAnniversary = await sequelize.query(
+      `
+  SELECT member_id, email, name
+  FROM employee
+  WHERE DATE_PART('day', marriage_anniversary) = DATE_PART('day', CURRENT_DATE)
+  AND DATE_PART('month', marriage_anniversary) = DATE_PART('month', CURRENT_DATE)
+`,
+      { type: sequelize.QueryTypes.SELECT }
+    );
+    if (!havingMarriageAnniversary.length)
       throw new Error("No marriage anniversary today!"); //If not exist
 
     const havingMarriageAnniversaryString = pushInArrayAndReturnString(
-      havingMarriageAnniversary.rows,
+      havingMarriageAnniversary,
       marriageAnniversaryEmails
     );
 
@@ -279,43 +280,48 @@ const marriageAnniverasryJob = async () => {
       imageUrl
     );
   } catch (error) {
-    console.log("Message: ", error.message);
+    console.log("marriageAnniverasryJob error: ", error);
   }
 };
 
 const employeeFamilyBirthdayJob = async () => {
   try {
     // Check for birthday
-    const havingBirthday =
-      await client.query(`select employee_family.name as name, employee.name as employee_name, employee.email as email from employee_family inner join employee on employee.id = employee_family.employee_id
-  WHERE DATE_PART('day', employee_family.date_of_birth) = date_part('day', CURRENT_DATE)
-  AND
-  DATE_PART('month', employee_family.date_of_birth) = date_part('month', CURRENT_DATE);`);
+    const havingBirthday = await sequelize.query(
+      `
+  SELECT employee_family.name as name, employee.name as employee_name, employee.email as email
+  FROM employee_family
+  INNER JOIN employee ON employee.id = employee_family.employee_id
+  WHERE DATE_PART('day', employee_family.date_of_birth) = DATE_PART('day', CURRENT_DATE)
+  AND DATE_PART('month', employee_family.date_of_birth) = DATE_PART('month', CURRENT_DATE)
+`,
+      { type: sequelize.QueryTypes.SELECT }
+    );
 
-    if (!havingBirthday.rowCount)
+    if (!havingBirthday.length)
       throw new Error("No employees' family birthday today!"); //If not exist
 
-    for (const row of havingBirthday.rows) {
+    for (const employeeFamily of havingBirthday) {
       const imageUrl = `${process.env.S3_URL}${
-        row.name.split(" ")[0].toLowerCase() + "_birthday.png"
+        employeeFamily.name.split(" ")[0].toLowerCase() + "_birthday.png"
       }`;
       const templatePath = path.resolve(
         "./templates/employeeFamilyBirthday.ejs"
       );
       const html = await renderFileAsync(templatePath, {
-        employeeName: row.employee_name.split(" ")[0],
-        employeeFamilyName: row.name,
+        employeeName: employeeFamily.employee_name.split(" ")[0],
+        employeeFamilyName: employeeFamily.name.split(" ")[0],
         imageUrl,
       });
-      let subject = `${row.name}, Happy Birthday`;
+      let subject = `${employeeFamily.name.split(" ")[0]}, Happy Birthday`;
       await mailer.sendMail({
-        to: row.email,
+        to: employeeFamily.email,
         subject,
         html,
       });
     }
   } catch (error) {
-    console.log("Message: ", error.message);
+    console.log("employeeFamilyBirthdayJob error: ", error);
   }
 };
 
@@ -344,4 +350,4 @@ const appScript = function () {
   );
 };
 
-appScript();
+module.exports = { appScript };
