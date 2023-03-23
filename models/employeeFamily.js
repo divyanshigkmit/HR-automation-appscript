@@ -11,7 +11,7 @@ module.exports = (sequelize) => {
       this.belongsTo(models.Employee, {
         foreignKey: "employeeId",
         targetKey: "id",
-        as: "employee family",
+        as: "employee",
         onDelete: "CASCADE",
       });
     }
