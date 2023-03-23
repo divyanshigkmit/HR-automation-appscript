@@ -1,12 +1,13 @@
 require("dotenv").config();
 
 const schedulers = require("./schedulers");
+const { sequelize } = require("./models");
 const app = require("./app");
 
 const startServer = async function () {
   try {
-    // await sequelize.authenticate();
-    // console.log("... Microservice db ✔");
+    await sequelize.authenticate();
+    console.log("... Database ✔");
 
     schedulers.start();
     console.log("... Schedulers ✔");
