@@ -1,3 +1,4 @@
 .env
 node_modules
 testScript.js
+credentials.json
