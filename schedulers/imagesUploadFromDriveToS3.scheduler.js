@@ -27,7 +27,7 @@ const imageUploadFromDriveToS3 = async () => {
   });
   await files.data.files.forEach(async (file) => {
     let isCompress = false;
-    const dest = fs.createWriteStream("uploads/" + file.name);
+    const dest = fs.createWriteStream("2023/" + file.name);
     const res = await googleDriveInstance.files.get(
       { auth, fileId: file.id, alt: "media" },
       { responseType: "stream" }
